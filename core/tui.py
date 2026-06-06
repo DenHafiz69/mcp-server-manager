@@ -109,12 +109,18 @@ class ConfirmDeleteModal(ModalScreen):
         else:
             self.dismiss(False)
 
+class VimDataTable(DataTable):
+    BINDINGS = [
+        Binding("j", "cursor_down", "Cursor Down", show=False),
+        Binding("k", "cursor_up", "Cursor Up", show=False),
+    ]
+
 
 class MCPManagerApp(App):
     """A Textual app to manage MCP servers."""
 
     CSS = """
-    DataTable {
+    DataTable, VimDataTable {
         height: 100%;
         margin: 1 2;
     }
@@ -131,7 +137,7 @@ class MCPManagerApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield DataTable(cursor_type="row")
+        yield VimDataTable(cursor_type="row")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -139,7 +145,7 @@ class MCPManagerApp(App):
         self.sub_title = "Manage Cursor and Claude MCPs"
 
         self.config = ConfigManager.load_master_config()
-        self.table = self.query_one(DataTable)
+        self.table = self.query_one(VimDataTable)
 
         self.table.add_columns("Status", "Server Name", "Command")
         self.populate_table()
@@ -179,6 +185,9 @@ class MCPManagerApp(App):
 
             row_index = self.table.get_row_index(server_name)
             self.table.move_cursor(row=row_index)
+
+    def on_vim_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self.on_data_table_row_selected(event)
 
     def action_sync_now(self) -> None:
         ConfigManager.sync_to_apps(self.config)
