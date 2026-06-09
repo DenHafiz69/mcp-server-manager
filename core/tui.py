@@ -109,6 +109,61 @@ class ConfirmDeleteModal(ModalScreen):
         else:
             self.dismiss(False)
 
+
+class RenameModal(ModalScreen):
+    """Screen for renaming a server."""
+
+    def __init__(self, current_name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.current_name = current_name
+
+    CSS = """
+    RenameModal {
+        align: center middle;
+    }
+    
+    #dialog {
+        grid-size: 2;
+        grid-gutter: 1;
+        grid-rows: 1 3 3;
+        padding: 1 2;
+        width: 50;
+        height: 15;
+        border: thick $primary;
+        background: $surface;
+    }
+    
+    #dialog-title {
+        column-span: 2;
+        text-align: center;
+        text-style: bold;
+    }
+    
+    #new_name {
+        column-span: 2;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label(f"Rename Server '{self.current_name}'", id="dialog-title"),
+            Input(value=self.current_name, placeholder="New Server Name", id="new_name"),
+            Button("Cancel", id="cancel"),
+            Button("Rename", variant="primary", id="rename"),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "rename":
+            new_name = self.query_one("#new_name", Input).value.strip()
+            if new_name:
+                self.dismiss(new_name)
+            else:
+                self.app.notify("Server name cannot be empty.", severity="error")
+        else:
+            self.dismiss(None)
+
+
 class VimDataTable(DataTable):
     BINDINGS = [
         Binding("j", "cursor_down", "Cursor Down", show=False),
@@ -133,6 +188,7 @@ class MCPManagerApp(App):
         Binding("e", "edit_config", "Edit Server"),
         Binding("d", "delete_server", "Delete Server"),
         Binding("t", "add_token", "Add Token"),
+        Binding("r", "rename_server", "Rename Server"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -360,3 +416,41 @@ class MCPManagerApp(App):
                     self.notify(f"Server '{server_name}' not found.", severity="error")
 
         self.push_screen(ConfirmDeleteModal(server_name), handle_delete)
+
+    def action_rename_server(self) -> None:
+        cursor_coordinate = self.table.cursor_coordinate
+        try:
+            row_key, _ = self.table.coordinate_to_cell_key(cursor_coordinate)
+            server_name = row_key.value
+        except Exception:
+            self.notify("Please select a server to rename.", severity="warning")
+            return
+
+        def handle_rename(new_name: str | None) -> None:
+            if new_name:
+                if new_name == server_name:
+                    return
+
+                servers = self.config.get("mcpServers", {})
+                if new_name in servers:
+                    self.notify(f"Server '{new_name}' already exists.", severity="error")
+                    return
+
+                new_servers = {}
+                for k, v in servers.items():
+                    if k == server_name:
+                        new_servers[new_name] = v
+                    else:
+                        new_servers[k] = v
+
+                self.config["mcpServers"] = new_servers
+                ConfigManager.save_master_config(self.config)
+                ConfigManager.sync_to_apps(self.config)
+                self.populate_table()
+
+                row_index = self.table.get_row_index(new_name)
+                self.table.move_cursor(row=row_index)
+
+                self.notify(f"Server '{server_name}' renamed to '{new_name}' and synced!")
+
+        self.push_screen(RenameModal(server_name), handle_rename)
